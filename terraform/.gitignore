@@ -1,0 +1,5 @@
+# Ignore local terraform state and binary providers
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl

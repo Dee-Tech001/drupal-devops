@@ -1,0 +1,38 @@
+services:
+  database:
+    image: mysql:8.0
+    container_name: drupal_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DATABASE_NAME}
+      MYSQL_USER: ${DATABASE_USER}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+
+  drupal:
+    build: .
+    container_name: drupal_web
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      DRUPAL_DB_HOST: database
+      DRUPAL_DB_NAME: ${DATABASE_NAME}
+      DRUPAL_DB_USER: ${DATABASE_USER}
+      DRUPAL_DB_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - drupal_modules:/var/www/html/modules
+      - drupal_profiles:/var/www/html/profiles
+      - drupal_themes:/var/www/html/themes
+      - drupal_sites:/var/www/html/sites
+    depends_on:
+      - database
+
+volumes:
+  db_data:
+  drupal_modules:
+  drupal_profiles:
+  drupal_themes:
+  drupal_sites:

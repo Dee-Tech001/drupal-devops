@@ -1,0 +1,112 @@
+name: Drupal CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # -------- CI: Build & Test --------
+  ci:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t drupal-app ./docker
+
+      - name: Run tests
+        run: |
+          docker run --rm drupal-app php -v
+          echo "Tests passed"
+
+  # -------- Deploy to Staging --------
+  staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t drupal-app ./docker
+          docker tag drupal-app:latest ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+          docker push ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SERVER_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            docker pull ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+            cd /home/ec2-user/drupal-deployment
+            docker compose up -d
+
+      - name: Smoke test staging
+        run: |
+          sleep 30
+          curl -f http://${{ secrets.STAGING_SERVER_IP }}:8080 || exit 1
+
+  # -------- Deploy to Production --------
+  production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: staging
+    environment:
+      name: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and promote image to production
+        run: |
+          docker pull ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+          docker tag ${{ secrets.ECR_REGISTRY }}/drupal-app:staging ${{ secrets.ECR_REGISTRY }}/drupal-app:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/drupal-app:latest
+
+      - name: Deploy to production via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            docker pull ${{ secrets.ECR_REGISTRY }}/drupal-app:latest
+            cd /home/ec2-user/drupal-deployment
+            docker compose up -d
+
+      - name: Smoke test production
+        run: |
+          sleep 30
+          curl -f http://${{ secrets.PROD_SERVER_IP }}:8080 || exit 1

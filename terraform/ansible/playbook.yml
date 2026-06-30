@@ -1,0 +1,100 @@
+---
+- name: Configure Drupal Servers
+  hosts: all
+  become: true
+  tasks:
+    - name: Update system packages
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+
+    - name: Install prerequisites
+      ansible.builtin.dnf:
+        name:
+          - git
+        state: present
+
+    - name: Install Docker Engine on Amazon Linux
+      ansible.builtin.dnf:
+        name: docker
+        state: present
+
+    - name: Create Docker CLI plugins directory
+      ansible.builtin.file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker Buildx plugin manually
+      ansible.builtin.get_url:
+        url: https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64
+        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
+        mode: '0755'
+        force: true # <--- This forces it to overwrite the outdated binary
+
+    - name: Download Docker Compose CLI Plugin
+      ansible.builtin.get_url:
+        url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+
+    - name: Start and enable Docker service
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ec2-user to docker group
+      ansible.builtin.user:
+        name: ec2-user
+        groups: docker
+        append: true
+
+    - name: Create deployment directory
+      ansible.builtin.file:
+        path: /home/ec2-user/drupal-deployment
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+
+    - name: Copy docker-compose file
+      ansible.builtin.copy:
+        src: ../docker/docker-compose.yml
+        dest: /home/ec2-user/drupal-deployment/docker-compose.yml
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+
+    - name: Deploy .env configuration file on host
+      ansible.builtin.copy:
+        src: .env
+        dest: /home/ec2-user/drupal-deployment/.env
+        owner: ec2-user
+        group: ec2-user
+        mode: '0600'
+
+      
+    - name: Ensure target directory has a basic Dockerfile for the build context
+      ansible.builtin.copy:
+        content: |
+          FROM drupal:10-php8.2-apache
+          RUN apt-get update && apt-get install -y git unzip && rm -rf /var/lib/apt/lists/*
+          WORKDIR /var/www/html
+        dest: /home/ec2-user/drupal-deployment/Dockerfile
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+
+    - name: Run Drupal containers via Compose V2
+      ansible.builtin.command:
+        cmd: sg docker -c "docker compose up -d"
+        chdir: /home/ec2-user/drupal-deployment
+      become: false
+
+    - name: Run Drupal containers via Compose V2
+      ansible.builtin.command:
+        cmd: sg docker -c "docker compose up -d"
+        chdir: /home/ec2-user/drupal-deployment
+      become: false
