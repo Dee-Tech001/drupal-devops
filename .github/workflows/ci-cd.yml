@@ -46,7 +46,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t drupal-app ./docker
+          docker build -t drupal-app ./terraform/docker
           docker tag drupal-app:latest ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
           docker push ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
 
