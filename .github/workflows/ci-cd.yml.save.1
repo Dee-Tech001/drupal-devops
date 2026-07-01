@@ -1,0 +1,58 @@
+        run: 
+          docker run --rm drupal-app php -v
+          echo "Tests pa
+  # -------- Deploy to Staging --------
+  staging:
+    name: Deploy to Stagin
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main'steps:
+    - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+       uses: aws-actions/configure-aws-credentials@v4
+       
+          aws-access-key-id: ${ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+       uses: aws-actions/amazon-ecr-login@v2
+      
+          docker build -t drupal-app ./terraform/docker
+          docker tag drupal-app:latest ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+          docker push ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+     : Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with
+          host: ${{ secrets.STAGING_SERVER_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KE          script: |
+           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+      docker pull ${{ secrets.ECR_REGISTRY }}/drupal-app:staging
+            cd /home/ec2-user/drupal-deployment
+       ocker compose up -d
+
+      - name: Smoke test staging
+        run: |
+          sle
+          curl -f http://${{ secrets.STAGING_SERVER_IP }}:8080 || exit 1
+  # -------- Deploy to Production --------
+  productin:
+    name: D to Production
+    runs-on: ubuntu-latest
+    needs: stagig
+    environment:
+      name: produ steps:
+   
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and promote image to production
+       
